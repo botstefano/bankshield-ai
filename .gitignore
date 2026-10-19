@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.db
+node_modules/
+frontend/dist/
+backend/static/
+backend/app/ml/artifacts/
+.pytest_cache/

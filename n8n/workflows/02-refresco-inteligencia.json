@@ -1,0 +1,92 @@
+{
+  "name": "BankShield - Refresco de inteligencia de amenazas",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Cada 6 horas",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2",
+      "name": "Login API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BANKSHIELD_URL}}/api/v1/auth/login",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({email: $env.BANKSHIELD_EMAIL, password: $env.BANKSHIELD_PASSWORD}) }}"
+      }
+    },
+    {
+      "id": "3",
+      "name": "Refrescar feeds",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BANKSHIELD_URL}}/api/v1/intel/refresh",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cada 6 horas": {
+      "main": [
+        [
+          {
+            "node": "Login API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Login API": {
+      "main": [
+        [
+          {
+            "node": "Refrescar feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "1"
+}

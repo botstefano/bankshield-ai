@@ -1,0 +1,136 @@
+{
+  "name": "BankShield - Supervisión del servicio",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Cada 5 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2",
+      "name": "GET /ready",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.BANKSHIELD_URL}}/api/v1/ready",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        },
+        "retryOnFail": true,
+        "maxTries": 3
+      }
+    },
+    {
+      "id": "3",
+      "name": "¿Falló?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.statusCode}}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "4",
+      "name": "Avisar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.NOTIFY_WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({text: `[BankShield] El servicio no está listo (HTTP ${$json.statusCode})`}) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Cada 5 minutos": {
+      "main": [
+        [
+          {
+            "node": "GET /ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /ready": {
+      "main": [
+        [
+          {
+            "node": "¿Falló?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Falló?": {
+      "main": [
+        [
+          {
+            "node": "Avisar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "1"
+}

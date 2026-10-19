@@ -1,0 +1,24 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: bankshield, POSTGRES_PASSWORD: bankshield, POSTGRES_DB: bankshield }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U bankshield"], interval: 5s, retries: 10 }
+  app:
+    build: .
+    env_file: [.env]
+    depends_on: { db: { condition: service_healthy } }
+    ports: ["8000:8000"]
+  n8n:
+    image: n8nio/n8n:latest
+    profiles: ["n8n"]
+    ports: ["5678:5678"]
+    environment:
+      BANKSHIELD_URL: http://app:8000
+      BANKSHIELD_EMAIL: ${ADMIN_EMAIL}
+      BANKSHIELD_PASSWORD: ${ADMIN_PASSWORD}
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
+      NOTIFY_WEBHOOK_URL: ${NOTIFY_WEBHOOK_URL:-}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+    volumes: [n8n:/home/node/.n8n]
+volumes: { pgdata: {}, n8n: {} }
