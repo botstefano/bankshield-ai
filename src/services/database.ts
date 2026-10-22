@@ -8,6 +8,7 @@ import {
   Role,
   ThreatIndicator,
   User,
+  WebhookConfig,
 } from "../types";
 import { assessUrl, ThreatLookupResult } from "./riskEngine";
 
@@ -33,6 +34,7 @@ interface StoredData {
   analyses: Analysis[];
   alerts: Alert[];
   auditLogs: AuditLog[];
+  webhookConfig?: WebhookConfig;
   nextAlertId: number;
   nextAuditId: number;
   nextIndicatorId: number;
@@ -146,6 +148,11 @@ function getInitialData(): StoredData {
     analyses,
     alerts,
     auditLogs,
+    webhookConfig: {
+      url: "",
+      secret: "",
+      enabled: false,
+    },
     nextAlertId: alertSeq,
     nextAuditId: auditLogs.length + 1,
     nextIndicatorId: threatIndicators.length + 1,
@@ -322,11 +329,127 @@ class DatabaseService {
         score: result.score,
       };
       this.data.alerts.unshift(alert);
+
+      // Disparar Webhook automático si está configurado (reemplaza flujo 01 de n8n)
+      this.dispatchWebhook({
+        event: "high_risk_alert",
+        alert_id: alert.id,
+        analysis_id: result.id,
+        level: result.level,
+        score: result.score,
+        domain: result.domain,
+        url: result.url,
+        recommendation: result.recommendation,
+        timestamp: result.created_at,
+      }).catch(() => {});
     }
 
     this.save(this.data);
     this.logAudit("analyze", currentUser?.email || "anonymous", `url:${result.domain}`, "ok", `Nivel ${result.level}, puntaje ${result.score}`);
     return result;
+  }
+
+  // Webhooks y Automatización (lo que hacía n8n)
+  getWebhookConfig(): WebhookConfig {
+    return this.data.webhookConfig || { url: "", secret: "", enabled: false };
+  }
+
+  saveWebhookConfig(config: WebhookConfig) {
+    this.data.webhookConfig = config;
+    this.save(this.data);
+    const currentUser = this.getCurrentUser();
+    this.logAudit("webhook_config", currentUser?.email || "system", "automation", "ok", `Webhook ${config.enabled ? "habilitado" : "deshabilitado"}: ${config.url}`);
+  }
+
+  async dispatchWebhook(payload: Record<string, unknown>): Promise<{ ok: boolean; statusText: string }> {
+    const config = this.getWebhookConfig();
+    if (!config.enabled || !config.url) {
+      return { ok: false, statusText: "Webhook no configurado o deshabilitado" };
+    }
+    const logId = `wh-${Date.now()}`;
+    const timestamp = new Date().toISOString();
+    const eventName = (payload.event as string) || "alert";
+
+    // Si es simulación local interna
+    if (config.url.includes("simulador") || config.url === "local" || config.url.includes("local-test")) {
+      const statusText = "200 OK (Simulado en vivo)";
+      config.lastDispatchedAt = timestamp;
+      config.lastStatus = statusText;
+      if (!config.logs) config.logs = [];
+      config.logs.unshift({
+        id: logId,
+        timestamp,
+        event: eventName,
+        url: config.url,
+        status: statusText,
+        ok: true,
+        payload,
+      });
+      if (config.logs.length > 20) config.logs.pop();
+      this.save(this.data);
+      this.logAudit("webhook_dispatch", "system", config.url, "ok", `Simulador: ${eventName} - ${statusText}`);
+      return { ok: true, statusText };
+    }
+
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (config.secret) {
+        headers["X-Webhook-Secret"] = config.secret;
+      }
+      const response = await fetch(config.url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const ok = response.ok;
+      const statusText = `${response.status} ${response.statusText}`;
+      config.lastDispatchedAt = timestamp;
+      config.lastStatus = statusText;
+      if (!config.logs) config.logs = [];
+      config.logs.unshift({
+        id: logId,
+        timestamp,
+        event: eventName,
+        url: config.url,
+        status: statusText,
+        ok,
+        payload,
+      });
+      if (config.logs.length > 20) config.logs.pop();
+      this.save(this.data);
+      this.logAudit("webhook_dispatch", "system", config.url, ok ? "ok" : "fail", `Evento: ${eventName} - ${statusText}`);
+      return { ok, statusText };
+    } catch (err) {
+      const msg = (err as Error).message;
+      const statusText = `Error: ${msg}`;
+      config.lastDispatchedAt = timestamp;
+      config.lastStatus = statusText;
+      if (!config.logs) config.logs = [];
+      config.logs.unshift({
+        id: logId,
+        timestamp,
+        event: eventName,
+        url: config.url,
+        status: statusText,
+        ok: false,
+        payload,
+      });
+      if (config.logs.length > 20) config.logs.pop();
+      this.save(this.data);
+      this.logAudit("webhook_dispatch", "system", config.url, "fail", `Error de envío: ${msg}`);
+      return { ok: false, statusText: msg };
+    }
+  }
+
+  async testWebhook(): Promise<{ ok: boolean; statusText: string }> {
+    return this.dispatchWebhook({
+      event: "test_ping",
+      source: "BankShield AI",
+      timestamp: new Date().toISOString(),
+      message: "Conexión exitosa desde BankShield AI. El canal de automatización está activo.",
+    });
   }
 
   getAnalyses(): Analysis[] {

@@ -97,3 +97,24 @@ export interface DashboardSummary {
   };
   generated_at: string;
 }
+
+export interface WebhookLog {
+  id: string;
+  timestamp: string;
+  event: string;
+  url: string;
+  status: string;
+  ok: boolean;
+  payload: Record<string, unknown>;
+}
+
+export interface WebhookConfig {
+  url: string;
+  secret: string;
+  enabled: boolean;
+  lastDispatchedAt?: string;
+  lastStatus?: string;
+  logs?: WebhookLog[];
+}
+
+
