@@ -56,18 +56,31 @@ export default function Intel() {
 
   function handleSaveWebhook(e: FormEvent) {
     e.preventDefault();
+    if (!webhookConfig.url.trim()) {
+      setWebhookMsg("Error: Por favor ingresa una URL de webhook.");
+      return;
+    }
     db.saveWebhookConfig(webhookConfig);
-    setWebhookMsg("Configuración de Webhook guardada exitosamente.");
+    setWebhookMsg("Configuración de Webhook guardada y activada exitosamente.");
   }
 
   async function handleTestWebhook() {
+    if (!webhookConfig.url.trim()) {
+      setWebhookMsg("Error: Por favor ingresa primero la URL del webhook en el campo de texto.");
+      return;
+    }
     setTestingWebhook(true);
     setWebhookMsg("");
     try {
-      const res = await db.testWebhook();
+      // Auto-save and auto-enable so testing works immediately with 1 click
+      const activeConfig = { ...webhookConfig, enabled: true };
+      setWebhookConfig(activeConfig);
+      db.saveWebhookConfig(activeConfig);
+
+      const res = await db.testWebhook(activeConfig);
       setWebhookConfig(db.getWebhookConfig());
       if (res.ok) {
-        setWebhookMsg(`¡Éxito! Webhook respondió correctamente (${res.statusText}).`);
+        setWebhookMsg(`¡Éxito! Webhook respondió correctamente (${res.statusText}). Revisa el Inspector abajo o tu receptor.`);
       } else {
         setWebhookMsg(`Aviso: ${res.statusText}. Verifica que el endpoint acepte solicitudes POST.`);
       }

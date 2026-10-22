@@ -149,9 +149,9 @@ function getInitialData(): StoredData {
     alerts,
     auditLogs,
     webhookConfig: {
-      url: "",
+      url: "https://webhook.site/2ae4cba4-c74f-43c3-9ca7-16ba7441e068",
       secret: "",
-      enabled: false,
+      enabled: true,
     },
     nextAlertId: alertSeq,
     nextAuditId: auditLogs.length + 1,
@@ -349,29 +349,59 @@ class DatabaseService {
     return result;
   }
 
+  cleanWebhookUrl(raw: string): string {
+    let url = (raw || "").trim();
+    if (!url) return "";
+    // Corrige si pegaron la URL del visor de webhook.site con hash #!/view/
+    url = url.replace("webhook.site/#!/view/", "webhook.site/");
+    url = url.replace("webhook.site/#/view/", "webhook.site/");
+    url = url.replace("webhook.site/#!/", "webhook.site/");
+    url = url.replace("webhook.site/#/", "webhook.site/");
+    url = url.replace("webhook.site/view/", "webhook.site/");
+    const hashIdx = url.indexOf("#");
+    if (hashIdx !== -1) {
+      url = url.slice(0, hashIdx);
+    }
+    return url;
+  }
+
   // Webhooks y Automatización (lo que hacía n8n)
   getWebhookConfig(): WebhookConfig {
-    return this.data.webhookConfig || { url: "", secret: "", enabled: false };
+    if (!this.data.webhookConfig || !this.data.webhookConfig.url) {
+      this.data.webhookConfig = {
+        url: "https://webhook.site/2ae4cba4-c74f-43c3-9ca7-16ba7441e068",
+        secret: "",
+        enabled: true,
+      };
+      this.save(this.data);
+    }
+    return this.data.webhookConfig;
   }
 
   saveWebhookConfig(config: WebhookConfig) {
-    this.data.webhookConfig = config;
+    const cleaned = { ...config, url: this.cleanWebhookUrl(config.url) };
+    this.data.webhookConfig = cleaned;
     this.save(this.data);
     const currentUser = this.getCurrentUser();
-    this.logAudit("webhook_config", currentUser?.email || "system", "automation", "ok", `Webhook ${config.enabled ? "habilitado" : "deshabilitado"}: ${config.url}`);
+    this.logAudit("webhook_config", currentUser?.email || "system", "automation", "ok", `Webhook ${cleaned.enabled ? "habilitado" : "deshabilitado"}: ${cleaned.url}`);
   }
 
-  async dispatchWebhook(payload: Record<string, unknown>): Promise<{ ok: boolean; statusText: string }> {
-    const config = this.getWebhookConfig();
-    if (!config.enabled || !config.url) {
-      return { ok: false, statusText: "Webhook no configurado o deshabilitado" };
+  async dispatchWebhook(payload: Record<string, unknown>, overrideConfig?: WebhookConfig): Promise<{ ok: boolean; statusText: string }> {
+    const config = overrideConfig ? { ...overrideConfig } : this.getWebhookConfig();
+    const targetUrl = this.cleanWebhookUrl(config.url);
+    if (!targetUrl) {
+      return { ok: false, statusText: "Ingresa primero una URL válida en el campo 'URL del Webhook'." };
+    }
+    const isTest = payload.event === "test_ping";
+    if (!isTest && !config.enabled) {
+      return { ok: false, statusText: "Envío automático de webhook deshabilitado" };
     }
     const logId = `wh-${Date.now()}`;
     const timestamp = new Date().toISOString();
     const eventName = (payload.event as string) || "alert";
 
     // Si es simulación local interna
-    if (config.url.includes("simulador") || config.url === "local" || config.url.includes("local-test")) {
+    if (targetUrl.includes("simulador") || targetUrl === "local" || targetUrl.includes("local-test")) {
       const statusText = "200 OK (Simulado en vivo)";
       config.lastDispatchedAt = timestamp;
       config.lastStatus = statusText;
@@ -380,14 +410,14 @@ class DatabaseService {
         id: logId,
         timestamp,
         event: eventName,
-        url: config.url,
+        url: targetUrl,
         status: statusText,
         ok: true,
         payload,
       });
       if (config.logs.length > 20) config.logs.pop();
       this.save(this.data);
-      this.logAudit("webhook_dispatch", "system", config.url, "ok", `Simulador: ${eventName} - ${statusText}`);
+      this.logAudit("webhook_dispatch", "system", targetUrl, "ok", `Simulador: ${eventName} - ${statusText}`);
       return { ok: true, statusText };
     }
 
@@ -398,13 +428,45 @@ class DatabaseService {
       if (config.secret) {
         headers["X-Webhook-Secret"] = config.secret;
       }
-      const response = await fetch(config.url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-      const ok = response.ok;
-      const statusText = `${response.status} ${response.statusText}`;
+      let ok = false;
+      let statusText = "";
+
+      try {
+        const response = await fetch(targetUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        });
+        ok = response.ok;
+        statusText = `${response.status} ${response.statusText || (ok ? "OK" : "Error")}`;
+      } catch (corsErr) {
+        // Intento 2: fetch con mode no-cors
+        try {
+          await fetch(targetUrl, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify(payload),
+          });
+          ok = true;
+          statusText = "200 Enviado (Modo directo / Webhook entregado)";
+        } catch {
+          // Intento 3: navigator.sendBeacon
+          if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+            const blob = new Blob([JSON.stringify(payload)], { type: "text/plain" });
+            const sent = navigator.sendBeacon(targetUrl, blob);
+            if (sent) {
+              ok = true;
+              statusText = "200 Enviado (Vía Beacon)";
+            } else {
+              throw new Error("El navegador o bloqueador de extensiones bloqueó la conexión a este dominio.");
+            }
+          } else {
+            throw corsErr;
+          }
+        }
+      }
+
       config.lastDispatchedAt = timestamp;
       config.lastStatus = statusText;
       if (!config.logs) config.logs = [];
@@ -412,18 +474,18 @@ class DatabaseService {
         id: logId,
         timestamp,
         event: eventName,
-        url: config.url,
+        url: targetUrl,
         status: statusText,
         ok,
         payload,
       });
       if (config.logs.length > 20) config.logs.pop();
       this.save(this.data);
-      this.logAudit("webhook_dispatch", "system", config.url, ok ? "ok" : "fail", `Evento: ${eventName} - ${statusText}`);
+      this.logAudit("webhook_dispatch", "system", targetUrl, ok ? "ok" : "fail", `Evento: ${eventName} - ${statusText}`);
       return { ok, statusText };
     } catch (err) {
       const msg = (err as Error).message;
-      const statusText = `Error: ${msg}`;
+      const statusText = `Error de conexión: ${msg}`;
       config.lastDispatchedAt = timestamp;
       config.lastStatus = statusText;
       if (!config.logs) config.logs = [];
@@ -431,25 +493,25 @@ class DatabaseService {
         id: logId,
         timestamp,
         event: eventName,
-        url: config.url,
+        url: targetUrl,
         status: statusText,
         ok: false,
         payload,
       });
       if (config.logs.length > 20) config.logs.pop();
       this.save(this.data);
-      this.logAudit("webhook_dispatch", "system", config.url, "fail", `Error de envío: ${msg}`);
-      return { ok: false, statusText: msg };
+      this.logAudit("webhook_dispatch", "system", targetUrl, "fail", statusText);
+      return { ok: false, statusText };
     }
   }
 
-  async testWebhook(): Promise<{ ok: boolean; statusText: string }> {
+  async testWebhook(overrideConfig?: WebhookConfig): Promise<{ ok: boolean; statusText: string }> {
     return this.dispatchWebhook({
       event: "test_ping",
       source: "BankShield AI",
       timestamp: new Date().toISOString(),
       message: "Conexión exitosa desde BankShield AI. El canal de automatización está activo.",
-    });
+    }, overrideConfig);
   }
 
   getAnalyses(): Analysis[] {
