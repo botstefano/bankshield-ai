@@ -49,6 +49,31 @@ Para compilar la aplicación para producción:
 npm run build
 ```
 
+## Despliegue en Render
+
+La aplicación está lista para desplegarse en **Render** como un **Static Site** (100% gratuito, con CDN global, SSL automático y soporte SPA):
+
+### Opción 1: Con Render Blueprint (Recomendado y Automático)
+1. Conecta tu repositorio de GitHub o GitLab a [Render](https://dashboard.render.com).
+2. Haz clic en **New +** y selecciona **Blueprint**.
+3. Selecciona tu repositorio. Render detectará automáticamente el archivo `render.yaml` incluido en el proyecto.
+4. Haz clic en **Apply**. Render compilará (`npm install && npm run build`) y publicará la carpeta `dist` con las reglas de reescritura SPA y cabeceras de seguridad.
+
+### Opción 2: Manual desde el Dashboard de Render
+1. En [Render Dashboard](https://dashboard.render.com), haz clic en **New +** → **Static Site**.
+2. Conecta tu repositorio.
+3. Configura los parámetros:
+   - **Name**: `bankshield-ai`
+   - **Branch**: `main` (o tu rama activa)
+   - **Build Command**: `npm install && npm run build`
+   - **Publish Directory**: `dist`
+4. En **Redirects/Rewrites**, agrega una regla de reescritura para Single Page Application:
+   - **Type**: `Rewrite`
+   - **Source**: `/*`
+   - **Destination**: `/index.html`
+5. Haz clic en **Create Static Site**. ¡Tu aplicación estará en línea en pocos segundos!
+
 ## Licencia
 
 MIT License.
+
