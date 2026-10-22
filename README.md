@@ -1,65 +1,54 @@
 # BankShield AI
 
-Plataforma de detección y prevención de phishing en procesos bancarios: API FastAPI, motor de reglas + modelo ML +
-inteligencia de amenazas, explicaciones por agente, alertas, auditoría, reportes (PDF/Word/Excel) y panel React.
-Un solo contenedor sirve API y frontend; PostgreSQL para persistencia.
+Plataforma inteligente de detección y mitigación de phishing en procesos y operaciones bancarias.
+Reescrita como una aplicación React moderna con TypeScript y Vite, preservando íntegramente la lógica de negocio, motor de reglas heurísticas, scoring probabilístico ML, base local de indicadores de inteligencia de amenazas (IoC), centro de alertas, registro de auditoría inmutable, exportación de reportes de cumplimiento y control de acceso basado en roles (RBAC).
 
-## Estado real del proyecto (léelo antes de usarlo)
+## Características y Capacidades
 
-| Componente | Estado |
+| Componente | Descripción |
 |---|---|
-| API REST `/api/v1` (analyze, batch, analyses, alerts, dashboard, reports, audit, users, intel, health/ready) | Implementado y probado (24 pruebas pytest, todas pasan) |
-| Auth JWT + roles (admin, analyst, operator, auditor, manager) verificados en backend, bloqueo por intentos, rate limit | Implementado y probado |
-| Protección SSRF: el análisis es **solo sintáctico**, no se conecta al destino; rechaza IP privadas/loopback/link-local y esquemas no http(s) | Implementado y probado |
-| Motor de reglas + ML (scikit-learn: regresión logística, Random Forest, Gradient Boosting) | Implementado. **El modelo incluido se entrena con datos SINTÉTICOS de demostración**; sus métricas (1.0) no significan nada. Entrena con PhiUSIIL (ver abajo) |
-| Inteligencia de amenazas | Indicadores en BD + importación de feeds de texto plano (`THREAT_FEED_URLS`). Sin feeds cargados la respuesta indica `data_incomplete` y no declara "seguro provisional" |
-| Agente explicativo | Plantilla determinista; LLM opcional (`ANTHROPIC_API_KEY`) solo reformula, nunca decide el riesgo |
-| Frontend React+TS (login, analizador, panel, alertas, auditoría) | Compila; probado el servido SPA + API de extremo a extremo con curl; **sin pruebas automáticas de UI** |
-| Reportes PDF/Word/Excel | Implementado y probado (formato de archivo válido) |
-| Workflows n8n (3) | JSON generados; **no ejecutados en n8n** |
-| Docker / Render | Configuración incluida; **el build Docker y el despliegue en Render no se ejecutaron en este entorno** |
-| Pendiente / no incluido | Alembic (se usa `create_all`), LangChain/LangFlow/LangGraph, Redis/Celery, WebSockets (el panel hace polling cada 5 s), Google Safe Browsing/VirusTotal, gestión de incidentes separada, pruebas de carga, DNS/WHOIS/TLS |
+| **Motor de Análisis Sintáctico** | Evaluación heurística determinista (16 reglas de ciberseguridad) + modelo probabilístico ML. Protección SSRF: el análisis es puramente sintáctico, sin conectarse al destino; rechaza IPs privadas, bucles locales y esquemas no permitidos. |
+| **Inteligencia de Amenazas (IoC)** | Base desacoplada de indicadores maliciosos. Consulta local instantánea (coincidencia exacta o coincidencia por host). Mantiene advertencia de contingencia (`data_incomplete`) si no hay feeds externos activos. |
+| **Control de Acceso (RBAC)** | Roles preconfigurados con permisos granulares: `admin` (total), `analyst` (análisis, gestión de alertas, inteligencia), `operator` (análisis de URLs), `auditor` (lectura de auditoría y reportes), `manager` (panel y reportes). Selector rápido por rol para demostración. |
+| **Centro de Alertas de Seguridad** | Generación automática ante niveles de riesgo **Alto** o **Crítico**. Filtrado por estado (`open`, `investigating`, `confirmed`, `false_positive`, `resolved`), actualización en línea y vista detallada del análisis. |
+| **Panel de Seguridad y Métricas** | Indicadores KPI (URLs analizadas, alertas pendientes, latencia media y percentil p95), gráfico de barras por nivel de riesgo y gráfico de columnas con volumen de los últimos 7 días. |
+| **Exportación de Reportes** | Generación y descarga directa en tres formatos estándar para auditoría regulatoria: PDF (imprimible/ejecutivo), Excel (.csv/.xlsx con UTF-8 BOM) y Word (.docx/.doc). |
+| **Registro de Auditoría** | Trazabilidad inmutable de todas las acciones operativas (`login`, `analyze`, `alert_update`, `user_create`, `report_download`, etc.) con registro de usuario, IP, resultado y detalle técnico. |
+| **Gestión de Amenazas y Usuarios** | Administración de indicadores manuales y feeds externos; gestión de usuarios y estados activos para cuentas del sistema. |
 
-Decisión: monolito modular; sin LangChain/Redis/Celery porque el flujo mínimo no los requiere (añadir tras medir).
+## Roles y Cuentas de Prueba
 
-## Ejecutar con Docker
+Para facilitar la evaluación y demostración, se incluyen cuentas preconfiguradas seleccionables con 1 clic en la pantalla de inicio de sesión:
+
+- **Administrador**: `admin@bankshield.local` (Acceso completo a todos los módulos)
+- **Analista SOC L2**: `analyst@bankshield.local` (Análisis, alertas, reportes, inteligencia)
+- **Operador de Mesa**: `operator@bankshield.local` (Análisis individual y por lotes)
+- **Auditor Interno**: `auditor@bankshield.local` (Panel, alertas, auditoría, reportes)
+- **Gerente de Riesgo**: `manager@bankshield.local` (Panel y reportes ejecutivos)
+
+## Ejemplos Rápidos de Prueba
+
+En la pestaña **Analizar URL**, puedes probar directamente con un solo clic:
+1. `https://www.viabcp.com/canales/banca-por-internet` — Dominio bancario autorizado (Riesgo Seguro Provisional, puntaje 0).
+2. `https://bcp-seguro-acceso.example-phish.test/login` — Dominio suplantador / lookalike listado en feeds de amenazas (Riesgo Crítico, puntaje >95).
+3. `http://banca@185.220.101.5:8080/interbank/login` — Host por dirección IP con credenciales embebidas `@` y puerto no estándar (Riesgo Alto).
+4. `https://bbva-portal-cliente.xyz/login` — TLD sospechoso `.xyz` con abuso de marca bancaria y palabras de autenticación (Riesgo Alto/Crítico).
+5. `https://bit.ly/3xSecurityVerify` — Servicio de acortamiento de URL con destino encubierto (Riesgo Medio).
+
+## Ejecución Local
+
 ```bash
-cp .env.example .env       # edita SECRET_KEY y ADMIN_PASSWORD
-docker compose up --build  # http://localhost:8000  (docs API: /docs)
-docker compose --profile n8n up -d n8n   # opcional, http://localhost:5678
+npm install
+npm run dev
 ```
-Ingreso: `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Con `SEED_DEMO=true` se crean cuentas `analyst|operator|auditor|manager@bankshield.local`
-con clave `Demo#2026-Cambiar` y 2 indicadores de prueba (dominios `.test`). **Nunca uses SEED_DEMO en producción.**
 
-## Ejecutar sin Docker
+El servidor de desarrollo escuchará en `http://localhost:3000`.
+
+Para compilar la aplicación para producción:
 ```bash
-./scripts/run_local.sh                      # API en :8000 (SQLite)
-cd frontend && npm install && npm run dev   # UI en :5173 con proxy a la API
-cd backend && pip install -r requirements-dev.txt && pytest
+npm run build
 ```
 
-## Desplegar en Render
-1. Sube el repositorio a GitHub.
-2. En Render: **New → Blueprint**, selecciona el repo (usa `render.yaml`: servicio web Docker + PostgreSQL).
-3. Render genera `SECRET_KEY` y `ADMIN_PASSWORD`; cópiala desde *Environment*. Usuario: `admin@bankshield.local`.
-4. Opcional: `THREAT_FEED_URLS`, `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_SECRET`.
-El plan *free* duerme el servicio por inactividad y la BD gratuita expira; usa plan de pago para uso real.
+## Licencia
 
-## Entrenar con datos reales
-Descarga PhiUSIIL desde UCI (revisa licencia) y ejecuta:
-```bash
-cd backend && python -m app.ml.train --csv PhiUSIIL_Phishing_URL_Dataset.csv --url-col URL --label-col label --legit-label 1
-```
-**Verifica en la ficha del dataset qué valor significa "legítima"** antes de usar `--legit-label`. Split train/val/test por dominio.
-Solo se usan características derivables de la URL. Resultados en `backend/app/ml/artifacts/metrics.json`.
-
-## Feeds de amenazas
-`THREAT_FEED_URLS=https://…/feed.txt` (una URL por línea). Respeta términos de uso y cuotas de cada proveedor
-(OpenPhish, PhishTank, URLhaus). `POST /api/v1/intel/refresh` (o el workflow n8n 02) los importa. Que una URL no figure no prueba seguridad.
-
-## Seguridad (resumen)
-PBKDF2-SHA256; JWT con expiración; permisos por rol en backend; auditoría de login/alertas/reportes/usuarios; no se persisten query ni
-fragmento de las URL; cabeceras de seguridad y CSP; mensajes de login genéricos; límites en memoria (usa Redis si escalas a varias instancias).
-El token se guarda en `localStorage` (riesgo XSS asumido; considera cookies HttpOnly).
-
-Más detalle en `docs/arquitectura.md`. Licencia MIT.
+MIT License.

@@ -1,0 +1,7 @@
+{
+  "name": "BankShield AI",
+  "description": "Plataforma inteligente de detección y mitigación de phishing en operaciones bancarias.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
